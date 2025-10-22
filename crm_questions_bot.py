@@ -1,16 +1,24 @@
-import logging
+import os
+import json
 import asyncio
+import logging
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# ------------------ 🔧 НАСТРОЙКИ ------------------
-BOT_TOKEN = "8231175537:AAHySMKxuiiX-_84zhtxrAdw45yebu8erwo"
+# ------------------ ⚙️ НАСТРОЙКИ ------------------
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 GOOGLE_SHEET_NAME = "Вопросы СРМ"
-CREDENTIALS_FILE = "credentials.json"
-# -------------------------------------------------
+GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
+# --------------------------------------------------
+
+# Проверка переменных окружения
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN не найден. Добавь его в Railway Variables.")
+if not GOOGLE_CREDENTIALS:
+    raise ValueError("❌ GOOGLE_CREDENTIALS не найден. Добавь его в Railway Variables.")
 
 # Настройка логов
 logging.basicConfig(
@@ -19,26 +27,30 @@ logging.basicConfig(
     datefmt="%d-%m-%Y %H:%M:%S"
 )
 
-# Авторизация Google Sheets
-logging.info("🔐 Подключаемся к Google Sheets...")
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-client = gspread.authorize(creds)
-sheet = client.open(GOOGLE_SHEET_NAME).sheet1
-logging.info("✅ Успешно подключено к таблице '%s'", GOOGLE_SHEET_NAME)
+# Авторизация в Google Sheets
+try:
+    creds_json = json.loads(GOOGLE_CREDENTIALS)
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
+    client = gspread.authorize(creds)
+    sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+    logging.info("✅ Успешно подключено к таблице '%s'", GOOGLE_SHEET_NAME)
+except Exception as e:
+    logging.error("❌ Ошибка при подключении к Google Sheets: %s", e)
+    raise
 
-# Telegram bot
+# Настройка Telegram
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ------------------ 🤖 ОБРАБОТЧИКИ ------------------
+# ------------------ 🤖 КОМАНДЫ ------------------
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
         "👋 Привет!\n\n"
         "Я бот для сбора вопросов по обучению CRM 💬\n"
-        "Просто напиши сюда свой вопрос — и я сохраню его для команды.\n\n"
+        "Просто напиши сюда свой вопрос — и я сохраню его в таблице для команды.\n\n"
         "Можно отправлять несколько вопросов подряд, каждый сохранится отдельно ✅"
     )
 
@@ -46,10 +58,12 @@ async def start(message: types.Message):
 async def info(message: types.Message):
     await message.answer(
         "📘 Все вопросы сохраняются в Google Таблицу *«Вопросы СРМ»*, "
-        "чтобы команда могла подготовиться заранее.\n\n"
+        "чтобы команда могла заранее подготовиться.\n\n"
         "Отправь свой вопрос прямо сюда 👇",
         parse_mode="Markdown"
     )
+
+# ------------------ 💬 ОБРАБОТКА ВОПРОСОВ ------------------
 
 @dp.message()
 async def collect_question(message: types.Message):
@@ -68,7 +82,7 @@ async def collect_question(message: types.Message):
         await message.answer("✅ Вопрос сохранён! Спасибо 🙌")
 
     except Exception as e:
-        logging.error("❌ Ошибка при записи: %s", e)
+        logging.error("❌ Ошибка при сохранении вопроса: %s", e)
         await message.answer("⚠️ Не удалось сохранить вопрос. Попробуй позже.")
 
 # ------------------ 🚀 ЗАПУСК ------------------
