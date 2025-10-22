@@ -14,36 +14,49 @@ GOOGLE_SHEET_NAME = "Вопросы СРМ"
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
 # --------------------------------------------------
 
+# Проверяем переменные окружения
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не найден. Добавь его в Railway Variables.")
 if not GOOGLE_CREDENTIALS:
     raise ValueError("❌ GOOGLE_CREDENTIALS не найден. Добавь его в Railway Variables.")
 
+# Логи
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%d-%m-%Y %H:%M:%S"
 )
 
-# ------------------ 🔐 ПОДКЛЮЧЕНИЕ GOOGLE ------------------
+# ------------------ 🔐 ПОДКЛЮЧЕНИЕ К GOOGLE SHEETS ------------------
 try:
-    # Если Railway убрал двойные слэши, возвращаем их обратно
-    fixed_json = GOOGLE_CREDENTIALS.replace('\\n', '\n')
+    creds_raw = GOOGLE_CREDENTIALS
+
+    # Универсальное восстановление корректного формата
+    if '\\\\n' in creds_raw:
+        fixed_json = creds_raw.replace('\\\\n', '\\n')
+    elif '\\n' in creds_raw:
+        fixed_json = creds_raw
+    else:
+        fixed_json = creds_raw.replace('\n', '\\n')
+
     creds_json = json.loads(fixed_json)
 
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
     client = gspread.authorize(creds)
     sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+
     logging.info("✅ Успешно подключено к таблице '%s'", GOOGLE_SHEET_NAME)
+
 except Exception as e:
     logging.error("❌ Ошибка при подключении к Google Sheets: %s", e)
     raise
 
-# ------------------ 🤖 НАСТРОЙКА БОТА ------------------
+# ------------------ 🤖 НАСТРОЙКА TELEGRAM БОТА ------------------
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# ------------------ 🧾 КОМАНДЫ ------------------
 @dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
@@ -62,6 +75,7 @@ async def info(message: types.Message):
         parse_mode="Markdown"
     )
 
+# ------------------ 💬 СОХРАНЕНИЕ ВОПРОСОВ ------------------
 @dp.message()
 async def collect_question(message: types.Message):
     user = message.from_user
@@ -82,6 +96,7 @@ async def collect_question(message: types.Message):
         logging.error("❌ Ошибка при сохранении вопроса: %s", e)
         await message.answer("⚠️ Не удалось сохранить вопрос. Попробуй позже.")
 
+# ------------------ 🚀 ЗАПУСК ------------------
 async def main():
     logging.info("🤖 Бот запущен и ожидает сообщений...")
     await dp.start_polling(bot)
